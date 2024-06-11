@@ -170,8 +170,8 @@ def main(args):
     if is_master(args) and args.remote_sync is not None:
         # first make sure it works
         result = remote_sync(
-            os.path.join(args.logs, args.name), 
-            os.path.join(args.remote_sync, args.name), 
+            os.path.join(args.logs, args.name),
+            os.path.join(args.remote_sync, args.name),
             args.remote_sync_protocol
         )
         if result:
@@ -182,8 +182,8 @@ def main(args):
         # if all looks good, start a process to do this every args.remote_sync_frequency seconds
         remote_sync_process = start_sync_process(
             args.remote_sync_frequency,
-            os.path.join(args.logs, args.name), 
-            os.path.join(args.remote_sync, args.name), 
+            os.path.join(args.logs, args.name),
+            os.path.join(args.remote_sync, args.name),
             args.remote_sync_protocol
         )
         remote_sync_process.start()
@@ -242,7 +242,7 @@ def main(args):
     if args.distill:
         # FIXME: currently assumes the model you're distilling from has the same tokenizer & transforms.
         dist_model, _, _ = create_model_and_transforms(
-            args.distill_model, 
+            args.distill_model,
             args.distill_pretrained,
             device=device,
             precision=args.precision,
@@ -297,7 +297,7 @@ def main(args):
             # this doesn't exist in older PyTorch, arg only added if enabled
             ddp_args['static_graph'] = True
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], **ddp_args)
-    
+
         if args.distill:
             dist_model = torch.nn.parallel.DistributedDataParallel(dist_model, device_ids=[device], **ddp_args)
 
@@ -445,10 +445,15 @@ def main(args):
                 "epoch": completed_epoch,
                 "name": args.name,
                 "state_dict": original_model.state_dict(),
+            }
+            full_checkpoint_dict = {
+                "epoch": completed_epoch,
+                "name": args.name,
+                "state_dict": original_model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
             if scaler is not None:
-                checkpoint_dict["scaler"] = scaler.state_dict()
+                full_checkpoint_dict["scaler"] = scaler.state_dict()
 
             if completed_epoch == args.epochs or (
                 args.save_frequency > 0 and (completed_epoch % args.save_frequency) == 0
@@ -466,7 +471,7 @@ def main(args):
                 # try not to corrupt the latest checkpoint if save fails
                 tmp_save_path = os.path.join(args.checkpoint_path, "tmp.pt")
                 latest_save_path = os.path.join(args.checkpoint_path, LATEST_CHECKPOINT_NAME)
-                torch.save(checkpoint_dict, tmp_save_path)
+                torch.save(full_checkpoint_dict, tmp_save_path)
                 os.replace(tmp_save_path, latest_save_path)
 
     if args.wandb and is_master(args):
@@ -477,15 +482,15 @@ def main(args):
         logging.info('Final remote sync.')
         remote_sync_process.terminate()
         result = remote_sync(
-            os.path.join(args.logs, args.name), 
-            os.path.join(args.remote_sync, args.name), 
+            os.path.join(args.logs, args.name),
+            os.path.join(args.remote_sync, args.name),
             args.remote_sync_protocol
         )
         if result:
             logging.info('Final remote sync successful.')
         else:
             logging.info('Final remote sync failed.')
-    
+
 
 def copy_codebase(args):
     from shutil import copytree, ignore_patterns
