@@ -531,7 +531,7 @@ class WrappedIndexableCC12M(IndexableCC12M):
         self.preprocess_txt = lambda text: tokenizer(text)[0]
 
     def __getitem__(self, idx):
-        sample = super().__getitem(idx)
+        sample = super().__getitem__(idx)
         image = sample["image"]
         text = sample["text"]
         return image, self.preprocess_txt(text)
