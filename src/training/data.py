@@ -526,7 +526,7 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
 
 
 class WrappedIndexableCC12M(IndexableCC12M):
-    def __init__(self, split='train', transform=None, tokenizer=None):
+    def __init__(self, split='train', transform=None, database_dir=None, tokenizer=None):
         super().__init__(split=split, transform=transform)
         self.preprocess_txt = lambda text: tokenizer(text)[0]
 
@@ -539,7 +539,7 @@ class WrappedIndexableCC12M(IndexableCC12M):
 
 def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
     split = "train" if is_train else "val"
-    dataset = WrappedIndexableCC12M(split=split, transform=preprocess_fn, tokenizer=tokenizer)
+    dataset = WrappedIndexableCC12M(split=split, transform=preprocess_fn, database_dir=args.train_data, tokenizer=tokenizer)
     num_samples = len(dataset)
     sampler = DistributedSampler(dataset) if args.distributed and is_train else None
     shuffle = is_train and sampler is None
