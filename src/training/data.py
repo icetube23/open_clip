@@ -527,7 +527,7 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
 
 class WrappedIndexableCC12M(IndexableCC12M):
     def __init__(self, split='train', transform=None, database_dir=None, tokenizer=None):
-        super().__init__(split=split, transform=transform)
+        super().__init__(split=split, transform=transform, database_dir=database_dir)
         self.preprocess_txt = lambda text: tokenizer(text)[0]
 
     def __getitem__(self, idx):
