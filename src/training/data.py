@@ -16,11 +16,12 @@ import torch
 import torchvision.datasets as datasets
 import webdataset as wds
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, IterableDataset, get_worker_info
+from torch.utils.data import Dataset, DataLoader, RandomSampler, SubsetRandomSampler, IterableDataset, get_worker_info
 from torch.utils.data.distributed import DistributedSampler
 from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
 from concap12m import IndexableCC12M
+from catalyst.data.sampler import DistributedSamplerWrapper
 
 
 try:
@@ -586,11 +587,21 @@ def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
             sampler = DistributedSampler(dataset)
         elif args.distributed and args.train_num_samples is not None:
             # dataset is split across gpus but only a subset of available data is sampled each epoch
-            sampler = DistributedRandomSampler(
-                dataset,
-                num_samples=args.train_num_samples,
-                replacement=args.dataset_resampled,
+            num_samples = args.train_num_samples
+            # sampler = DistributedRandomSampler(
+            #     dataset,
+            #     num_samples=args.train_num_samples,
+            #     replacement=args.dataset_resampled,
+            # )
+            sampler = DistributedSamplerWrapper(
+                RandomSampler(
+                    dataset,
+                    replacement=args.dataset_resampled,
+                    num_samples=args.train_num_samples,
+                    generator=torch.Generator().manual_seed(42),
+                ),
             )
+
         elif not args.distributed and args.train_num_samples is not None:
             assert False, "TODO: implement this functionality if ever needed using torch's RandomSampler"
 
