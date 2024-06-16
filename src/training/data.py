@@ -8,6 +8,7 @@ import sys
 import braceexpand
 from dataclasses import dataclass
 from multiprocessing import Value
+from operator import itemgetter
 
 import numpy as np
 import pandas as pd
@@ -525,8 +526,44 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
     return DataInfo(dataloader, sampler)
 
 
+class DistributedRandomSampler(DistributedSampler):
+    """
+    Custom combination of DistributedSampler and RandomSampler.
+
+    Implementation loosely inspired from DistributedSamplerWrapper from catalyst:
+    https://catalyst-team.github.io/catalyst/_modules/catalyst/data/sampler.html#DistributedSamplerWrapper
+    """
+
+    def __init__(
+        self,
+        dataset,
+        num_replicas=None,
+        rank=None,
+        num_samples=None,
+        replacement=True,
+    ):
+        super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=False)
+        self.dataset = dataset
+        num_samples = num_samples if num_samples else len(dataset)
+        self.local_num_samples = num_samples // self.num_replicas
+        self.replacement = replacement
+        self.generator = np.random.default_rng()
+
+    def __iter__(self):
+        """Iterate over sampler.
+
+        Returns:
+            python iterator
+        """
+        indexes_of_indexes = list(super().__iter__())
+        indexes_of_indexes = self.generator.choice(indexes_of_indexes, self.local_num_samples, replace=self.replacement)
+        subsampler_indexes = self.dataset
+        return iter(itemgetter(*indexes_of_indexes)(subsampler_indexes))
+
+
 class WrappedIndexableCC12M(IndexableCC12M):
     def __init__(self, split='train', transform=None, database_dir=None, tokenizer=None):
+        assert database_dir, "Got database_dir=None, this could cause direct writes to data directory and is forbidden."
         super().__init__(split=split, transform=transform, database_dir=database_dir)
         self.preprocess_txt = lambda text: tokenizer(text)[0]
 
@@ -541,7 +578,22 @@ def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
     split = "train" if is_train else "val"
     dataset = WrappedIndexableCC12M(split=split, transform=preprocess_fn, database_dir=args.train_data, tokenizer=tokenizer)
     num_samples = len(dataset)
-    sampler = DistributedSampler(dataset) if args.distributed and is_train else None
+
+    sampler = None
+    if is_train:
+        if args.distributed and args.train_num_samples is None:
+            # default distributed case, the whole dataset is split across gpus
+            sampler = DistributedSampler(dataset)
+        elif args.distributed and args.train_num_samples is not None:
+            # dataset is split across gpus but only a subset of available data is sampled each epoch
+            sampler = DistributedRandomSampler(
+                dataset,
+                num_samples=args.train_num_samples,
+                replacement=args.dataset_resampled,
+            )
+        elif not args.distributed and args.train_num_samples is not None:
+            assert False, "TODO: implement this functionality if ever needed using torch's RandomSampler"
+
     shuffle = is_train and sampler is None
 
     dataloader = DataLoader(
