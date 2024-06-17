@@ -598,7 +598,7 @@ def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
                     dataset,
                     replacement=args.dataset_resampled,
                     num_samples=args.train_num_samples,
-                    generator=torch.Generator().manual_seed(42),
+                    generator=torch.Generator().manual_seed(args.seed),
                 ),
             )
 
