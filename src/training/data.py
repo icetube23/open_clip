@@ -21,6 +21,7 @@ from torch.utils.data.distributed import DistributedSampler
 from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
 from concap12m import IndexableCC12M
+from concap12m.cc12m_full import build_cc12m_webdataset
 from catalyst.data.sampler import DistributedSamplerWrapper
 
 
@@ -622,6 +623,23 @@ def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
     return DataInfo(dataloader, sampler)
 
 
+def get_cc12m_webdataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
+    split = "train" if is_train else "val"
+    dataset, dataloader = build_cc12m_webdataset(
+        split=split,
+        img_transform=preprocess_fn,
+        txt_transform=lambda text: tokenizer(text)[0] if tokenizer else lambda text: text,
+        epoch=epoch,
+        is_train=is_train,
+        seed=args.seed,
+        batch_size=args.batch_size,
+        workers=args.workers,
+        return_type='tuple',
+    )
+
+    return DataInfo(dataloader=dataloader, shared_epoch=dataset.shared_epoch)
+
+
 def get_dataset_fn(data_path, dataset_type):
     if dataset_type == "webdataset":
         return get_wds_dataset
@@ -631,6 +649,8 @@ def get_dataset_fn(data_path, dataset_type):
         return get_synthetic_dataset
     elif dataset_type == "cc12m":
         return get_cc12m_dataset
+    elif dataset_type == "cc12m_web":
+        return get_cc12m_webdataset
     elif dataset_type == "auto":
         ext = data_path.split('.')[-1]
         if ext in ['csv', 'tsv']:
