@@ -246,7 +246,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
             batch_time_m.reset()
             data_time_m.reset()
 
-        if is_master(args) and args.save_logs and (step % args.save_frequency_step == 0 or batch_count == num_batches_per_epoch):
+        if args.save_logs and args.next_log_ckpt_step and (step % args.next_log_ckpt_step == 0 or batch_count == num_batches_per_epoch):
             checkpoint_dict = {
                 "epoch": epoch,
                 "name": args.name,

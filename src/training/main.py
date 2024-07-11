@@ -438,6 +438,8 @@ def main(args):
         }
         torch.save(checkpoint_dict, os.path.join(args.checkpoint_path, "epoch_0.pt"))
 
+    args.next_log_ckpt_step = 1 if args.save_log_step else None
+
     for epoch in range(start_epoch, args.epochs):
         if is_master(args):
             logging.info(f'Start epoch {epoch}')
