@@ -429,6 +429,15 @@ def main(args):
 
     loss = create_loss(args)
 
+    # Save untrained model for comparison.
+    if args.save_logs:
+        checkpoint_dict = {
+            "epoch": 0,
+            "name": args.name,
+            "state_dict": original_model.state_dict(),
+        }
+        torch.save(checkpoint_dict, os.path.join(args.checkpoint_path, "epoch_0.pt"))
+
     for epoch in range(start_epoch, args.epochs):
         if is_master(args):
             logging.info(f'Start epoch {epoch}')
