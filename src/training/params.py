@@ -66,6 +66,12 @@ def parse_args(args):
         help="Which type of dataset to process."
     )
     parser.add_argument(
+        "--json-captions",
+        default=False,
+        action="store_true",
+        help="Whether to load captions from txt or json files."
+    )
+    parser.add_argument(
         "--dataset-resampled",
         default=False,
         action="store_true",

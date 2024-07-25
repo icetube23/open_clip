@@ -22,6 +22,7 @@ from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
 from concap12m import IndexableCC12M
 from concap12m.cc12m_full import build_cc12m_webdataset
+from concap12m.webds_pipeline import wds_filter_unpack_json
 from catalyst.data.sampler import DistributedSamplerWrapper
 
 
@@ -391,10 +392,25 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
             # at this point, we have an iterator over the shards assigned to each worker
             wds.tarfile_to_samples(handler=log_and_continue),
         ])
+
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
         wds.decode("pilrgb", handler=log_and_continue),
-        wds.rename(image="jpg;png;jpeg;webp", text="txt"),
+    ])
+
+    if args.json_captions:
+        # captions are given as json files under the key 'caption'
+        pipeline.extend([
+            wds_filter_unpack_json("json", ("caption",)),
+            wds.rename(image="jpg;png;jpeg;webp", text="caption"),
+        ])
+    else:
+        # captions are given as txt files in plain text
+        pipeline.extend([
+            wds.rename(image="jpg;png;jpeg;webp", text="txt")
+        ])
+
+    pipeline.extend([
         wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, partial=not is_train)
