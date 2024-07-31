@@ -402,6 +402,7 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
         # captions are given as json files under the key 'caption'
         pipeline.extend([
             wds_filter_unpack_json("json", ("caption",)),
+        wds_print_content(),
             wds.rename(image="jpg;png;jpeg;webp", text="caption"),
         ])
     else:
@@ -414,7 +415,8 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
         wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
         wds_print_content(),
         wds.to_tuple("image", "text"),
-        wds.batched(args.batch_size, partial=not is_train)
+        wds.batched(args.batch_size, partial=not is_train),
+        wds_print_content(),
     ])
 
     dataset = wds.DataPipeline(*pipeline)
