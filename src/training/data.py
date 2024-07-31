@@ -22,7 +22,7 @@ from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
 from concap12m import IndexableCC12M
 from concap12m.cc12m_full import build_cc12m_webdataset
-from concap12m.webds_pipeline import wds_filter_unpack_json
+from concap12m.webds_pipeline import wds_filter_unpack_json, wds_print_content
 from catalyst.data.sampler import DistributedSamplerWrapper
 
 
@@ -178,7 +178,7 @@ def count_samples(dataloader):
 
 
 def filter_no_caption_or_no_image(sample):
-    has_caption = ('txt' in sample)
+    has_caption = ('txt' in sample or 'json' in sample)
     has_image = ('png' in sample or 'jpg' in sample or 'jpeg' in sample or 'webp' in sample)
     return has_caption and has_image
 
@@ -412,6 +412,7 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
 
     pipeline.extend([
         wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
+        wds_print_content(),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, partial=not is_train)
     ])
