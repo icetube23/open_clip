@@ -20,10 +20,10 @@ from torch.utils.data import Dataset, DataLoader, RandomSampler, SubsetRandomSam
 from torch.utils.data.distributed import DistributedSampler
 from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
-from concap12m import IndexableCC12M
-from concap12m.cc12m_full import build_cc12m_webdataset
-from concap12m.webds_pipeline import wds_filter_unpack_json, wds_print_content
-from catalyst.data.sampler import DistributedSamplerWrapper
+# from concap12m import IndexableCC12M
+# from concap12m.cc12m_full import build_cc12m_webdataset
+# from concap12m.webds_pipeline import wds_filter_unpack_json, wds_print_content
+# from catalyst.data.sampler import DistributedSamplerWrapper
 
 
 try:
@@ -275,6 +275,20 @@ class detshuffle2(wds.PipelineStage):
             seed = self.seed + epoch
         rng.seed(seed)
         return _shuffle(src, self.bufsize, self.initial, rng)
+
+
+class wds_filter_unpack_json(wds.PipelineStage):
+    def __init__(self, json_key: str, content_keys: tuple[str]):
+        self.json_key = json_key
+        self.content_keys = content_keys
+
+    def run(self, src):
+        for data in src:
+            # at this point, wds.decode has decoded the json bytestring and it is already a dict
+            json_data = data.pop(self.json_key)
+            for content_key in self.content_keys:
+                data[content_key] = json_data[content_key]
+            yield data
 
 
 class ResampledShards2(IterableDataset):
@@ -544,116 +558,116 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
     return DataInfo(dataloader, sampler)
 
 
-class DistributedRandomSampler(DistributedSampler):
-    """
-    Custom combination of DistributedSampler and RandomSampler.
+# class DistributedRandomSampler(DistributedSampler):
+#     """
+#     Custom combination of DistributedSampler and RandomSampler.
 
-    Implementation loosely inspired from DistributedSamplerWrapper from catalyst:
-    https://catalyst-team.github.io/catalyst/_modules/catalyst/data/sampler.html#DistributedSamplerWrapper
-    """
+#     Implementation loosely inspired from DistributedSamplerWrapper from catalyst:
+#     https://catalyst-team.github.io/catalyst/_modules/catalyst/data/sampler.html#DistributedSamplerWrapper
+#     """
 
-    def __init__(
-        self,
-        dataset,
-        num_replicas=None,
-        rank=None,
-        num_samples=None,
-        replacement=True,
-    ):
-        super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=False)
-        self.dataset = dataset
-        num_samples = num_samples if num_samples else len(dataset)
-        self.local_num_samples = num_samples // self.num_replicas
-        self.replacement = replacement
-        self.generator = np.random.default_rng()
+#     def __init__(
+#         self,
+#         dataset,
+#         num_replicas=None,
+#         rank=None,
+#         num_samples=None,
+#         replacement=True,
+#     ):
+#         super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=False)
+#         self.dataset = dataset
+#         num_samples = num_samples if num_samples else len(dataset)
+#         self.local_num_samples = num_samples // self.num_replicas
+#         self.replacement = replacement
+#         self.generator = np.random.default_rng()
 
-    def __iter__(self):
-        """Iterate over sampler.
+#     def __iter__(self):
+#         """Iterate over sampler.
 
-        Returns:
-            python iterator
-        """
-        indexes_of_indexes = list(super().__iter__())
-        indexes_of_indexes = self.generator.choice(indexes_of_indexes, self.local_num_samples, replace=self.replacement)
-        subsampler_indexes = self.dataset
-        return iter(itemgetter(*indexes_of_indexes)(subsampler_indexes))
-
-
-class WrappedIndexableCC12M(IndexableCC12M):
-    def __init__(self, split='train', transform=None, database_dir=None, tokenizer=None):
-        assert database_dir, "Got database_dir=None, this could cause direct writes to data directory and is forbidden."
-        super().__init__(split=split, transform=transform, database_dir=database_dir)
-        self.preprocess_txt = lambda text: tokenizer(text)[0]
-
-    def __getitem__(self, idx):
-        sample = super().__getitem__(idx)
-        image = sample["image"]
-        text = sample["text"]
-        return image, self.preprocess_txt(text)
+#         Returns:
+#             python iterator
+#         """
+#         indexes_of_indexes = list(super().__iter__())
+#         indexes_of_indexes = self.generator.choice(indexes_of_indexes, self.local_num_samples, replace=self.replacement)
+#         subsampler_indexes = self.dataset
+#         return iter(itemgetter(*indexes_of_indexes)(subsampler_indexes))
 
 
-def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
-    split = "train" if is_train else "val"
-    dataset = WrappedIndexableCC12M(split=split, transform=preprocess_fn, database_dir=args.train_data, tokenizer=tokenizer)
-    num_samples = len(dataset)
+# class WrappedIndexableCC12M(IndexableCC12M):
+#     def __init__(self, split='train', transform=None, database_dir=None, tokenizer=None):
+#         assert database_dir, "Got database_dir=None, this could cause direct writes to data directory and is forbidden."
+#         super().__init__(split=split, transform=transform, database_dir=database_dir)
+#         self.preprocess_txt = lambda text: tokenizer(text)[0]
 
-    sampler = None
-    if is_train:
-        if args.distributed and args.train_num_samples is None:
-            # default distributed case, the whole dataset is split across gpus
-            sampler = DistributedSampler(dataset)
-        elif args.distributed and args.train_num_samples is not None:
-            # dataset is split across gpus but only a subset of available data is sampled each epoch
-            num_samples = args.train_num_samples
-            # sampler = DistributedRandomSampler(
-            #     dataset,
-            #     num_samples=args.train_num_samples,
-            #     replacement=args.dataset_resampled,
-            # )
-            sampler = DistributedSamplerWrapper(
-                RandomSampler(
-                    dataset,
-                    replacement=args.dataset_resampled,
-                    num_samples=args.train_num_samples,
-                    generator=torch.Generator().manual_seed(args.seed),
-                ),
-            )
-
-        elif not args.distributed and args.train_num_samples is not None:
-            assert False, "TODO: implement this functionality if ever needed using torch's RandomSampler"
-
-    shuffle = is_train and sampler is None
-
-    dataloader = DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        shuffle=shuffle,
-        num_workers=args.workers,
-        pin_memory=True,
-        sampler=sampler,
-        drop_last=is_train,
-    )
-    dataloader.num_samples = num_samples
-    dataloader.num_batches = len(dataloader)
-
-    return DataInfo(dataloader, sampler)
+#     def __getitem__(self, idx):
+#         sample = super().__getitem__(idx)
+#         image = sample["image"]
+#         text = sample["text"]
+#         return image, self.preprocess_txt(text)
 
 
-def get_cc12m_webdataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
-    split = "train" if is_train else "val"
-    dataset, dataloader = build_cc12m_webdataset(
-        split=split,
-        img_transform=preprocess_fn,
-        txt_transform=lambda text: tokenizer(text)[0] if tokenizer else lambda text: text,
-        epoch=epoch,
-        is_train=is_train,
-        seed=args.seed,
-        batch_size=args.batch_size,
-        workers=args.workers,
-        return_type='tuple',
-    )
+# def get_cc12m_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
+#     split = "train" if is_train else "val"
+#     dataset = WrappedIndexableCC12M(split=split, transform=preprocess_fn, database_dir=args.train_data, tokenizer=tokenizer)
+#     num_samples = len(dataset)
 
-    return DataInfo(dataloader=dataloader, shared_epoch=dataset.shared_epoch)
+#     sampler = None
+#     if is_train:
+#         if args.distributed and args.train_num_samples is None:
+#             # default distributed case, the whole dataset is split across gpus
+#             sampler = DistributedSampler(dataset)
+#         elif args.distributed and args.train_num_samples is not None:
+#             # dataset is split across gpus but only a subset of available data is sampled each epoch
+#             num_samples = args.train_num_samples
+#             # sampler = DistributedRandomSampler(
+#             #     dataset,
+#             #     num_samples=args.train_num_samples,
+#             #     replacement=args.dataset_resampled,
+#             # )
+#             sampler = DistributedSamplerWrapper(
+#                 RandomSampler(
+#                     dataset,
+#                     replacement=args.dataset_resampled,
+#                     num_samples=args.train_num_samples,
+#                     generator=torch.Generator().manual_seed(args.seed),
+#                 ),
+#             )
+
+#         elif not args.distributed and args.train_num_samples is not None:
+#             assert False, "TODO: implement this functionality if ever needed using torch's RandomSampler"
+
+#     shuffle = is_train and sampler is None
+
+#     dataloader = DataLoader(
+#         dataset,
+#         batch_size=args.batch_size,
+#         shuffle=shuffle,
+#         num_workers=args.workers,
+#         pin_memory=True,
+#         sampler=sampler,
+#         drop_last=is_train,
+#     )
+#     dataloader.num_samples = num_samples
+#     dataloader.num_batches = len(dataloader)
+
+#     return DataInfo(dataloader, sampler)
+
+
+# def get_cc12m_webdataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
+#     split = "train" if is_train else "val"
+#     dataset, dataloader = build_cc12m_webdataset(
+#         split=split,
+#         img_transform=preprocess_fn,
+#         txt_transform=lambda text: tokenizer(text)[0] if tokenizer else lambda text: text,
+#         epoch=epoch,
+#         is_train=is_train,
+#         seed=args.seed,
+#         batch_size=args.batch_size,
+#         workers=args.workers,
+#         return_type='tuple',
+#     )
+
+#     return DataInfo(dataloader=dataloader, shared_epoch=dataset.shared_epoch)
 
 
 def get_dataset_fn(data_path, dataset_type):
@@ -664,9 +678,9 @@ def get_dataset_fn(data_path, dataset_type):
     elif dataset_type == "synthetic":
         return get_synthetic_dataset
     elif dataset_type == "cc12m":
-        return get_cc12m_dataset
+        raise ValueError("Indexable CC12M dataset is not supported anymore.")
     elif dataset_type == "cc12m_web":
-        return get_cc12m_webdataset
+        raise ValueError("Custom CC12M webdataset is not supported anymore. Use the open_clip version instead.")
     elif dataset_type == "auto":
         ext = data_path.split('.')[-1]
         if ext in ['csv', 'tsv']:
