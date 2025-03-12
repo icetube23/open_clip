@@ -81,6 +81,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
     losses_m = {}
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
+    gpu_time_m = AverageMeter()
     end = time.time()
     for i, batch in enumerate(dataloader):
         i_accum = i // args.accum_freq
@@ -94,6 +95,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
         texts = texts.to(device=device, non_blocking=True)
 
         data_time_m.update(time.time() - end)
+        gpu_time_start = time.time()
         optimizer.zero_grad()
 
         if args.accum_freq == 1:
@@ -188,6 +190,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
         with torch.no_grad():
             unwrap_model(model).logit_scale.clamp_(0, math.log(100))
 
+        gpu_time_m.update(time.time() - gpu_time_start)
         batch_time_m.update(time.time() - end)
         end = time.time()
         batch_count = i_accum + 1
@@ -215,6 +218,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
             logging.info(
                 f"Train Epoch: {epoch} [{num_samples:>{sample_digits}}/{samples_per_epoch} ({percent_complete:.0f}%)] "
                 f"Data (t): {data_time_m.avg:.3f} "
+                f"GPU (t): {gpu_time_m.avg:.3f} "
                 f"Batch (t): {batch_time_m.avg:.3f}, {samples_per_second:#g}/s, {samples_per_second_per_gpu:#g}/s/gpu "
                 f"LR: {optimizer.param_groups[0]['lr']:5f} "
                 f"Logit Scale: {logit_scale_scalar:.3f} " + loss_log
@@ -223,6 +227,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
             # Save train loss / etc. Using non avg meter values as loggers have their own smoothing
             log_data = {
                 "data_time": data_time_m.val,
+                "gpu_time": gpu_time_m.val,
                 "batch_time": batch_time_m.val,
                 "samples_per_second": samples_per_second,
                 "samples_per_second_per_gpu": samples_per_second_per_gpu,
@@ -244,6 +249,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
 
             # resetting batch / data time meters per log window
             batch_time_m.reset()
+            gpu_time_m.reset()
             data_time_m.reset()
 
         if args.save_logs and args.next_log_ckpt_step and (step >= args.next_log_ckpt_step or batch_count == num_batches_per_epoch):
